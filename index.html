@@ -452,11 +452,11 @@
         const elapsed = Math.floor((Date.now() - s.savedAt) / 1000);
         const ticks = Math.min(elapsed, 86400); // 最大24時間
         // 離席中の自然減少をまとめて適用
-        s.hunger  = Math.max(0, s.hunger  - ticks * 0.5);
-        s.energy  = Math.max(0, s.energy  - ticks * 0.3);
-        let moodDrop = ticks * 0.28;
-        if (s.hunger < 30) moodDrop += ticks * 0.5;
-        if (s.dirty)       moodDrop += ticks * 0.6;
+        s.hunger  = Math.max(0, s.hunger  - ticks * 0.18);
+        s.energy  = Math.max(0, s.energy  - ticks * 0.10);
+        let moodDrop = ticks * 0.08;
+        if (s.hunger < 30) moodDrop += ticks * 0.18;
+        if (s.dirty)       moodDrop += ticks * 0.20;
         s.mood    = Math.max(0, s.mood - moodDrop);
         s.age    += ticks;
         // 長時間放置でランダムに汚れる
@@ -465,8 +465,8 @@
         // 寝ている間はエネルギー回復・お腹は少し減る
         const elapsed = Math.floor((Date.now() - s.savedAt) / 1000);
         const ticks = Math.min(elapsed, 86400);
-        s.energy = Math.min(100, s.energy + ticks * 1.2);
-        s.hunger = Math.max(0, s.hunger  - ticks * 0.15);
+        s.energy = Math.min(100, s.energy + ticks * 0.8);
+        s.hunger = Math.max(0, s.hunger  - ticks * 0.08);
         s.age   += ticks;
       }
       // 必須フィールドの補完（バージョン差異対策）
@@ -552,6 +552,9 @@
     $('btnFeed').disabled=state.sleeping||state.id==='egg';
     $('btnPlay').disabled=state.sleeping||state.id==='egg';
     $('btnClean').disabled=state.id==='egg'||!state.dirty;
+    // ねかす/おこす ラベル切り替え
+    const sleepBtn=$('btnSleep');
+    sleepBtn.innerHTML=state.sleeping?'<span class="ico">🌅</span>おこす':'<span class="ico">😴</span>ねかす';
     $('prog').textContent=dexCount()+' / '+TOTAL;
     renderDex();
   }
@@ -569,7 +572,7 @@
     if(Math.random()<0.35) state.dirty=true; hop(); say(Q.tabe); render(); saveState(); }
   function play(){ if($('btnPlay').disabled)return;
     state.mood=Math.min(100,state.mood+24); state.energy=Math.min(100,state.energy+10);
-    state.hunger=Math.max(0,state.hunger-6); state.play++; state.care+=2;
+    state.hunger=Math.max(0,state.hunger-3); state.play++; state.care+=2;
     wander(); say(Math.random()<0.45?Q.uo:rl()); render(); saveState(); }
   function sleepToggle(){ if(state.id==='egg')return;
     state.sleeping=!state.sleeping;
@@ -630,10 +633,10 @@
   function tick(){
     state.age++;
     if(state.id!=='egg'){
-      if(state.sleeping){ state.energy=Math.min(100,state.energy+1.2); state.hunger=Math.max(0,state.hunger-0.15); state.sleepSec++; }
+      if(state.sleeping){ state.energy=Math.min(100,state.energy+0.8); state.hunger=Math.max(0,state.hunger-0.08); state.sleepSec++; }
       else{
-        state.hunger=Math.max(0,state.hunger-0.5); state.energy=Math.max(0,state.energy-0.3);
-        let md=0.26; if(state.hunger<30)md+=0.5; if(state.energy<30)md+=0.35; if(state.dirty)md+=0.6;
+        state.hunger=Math.max(0,state.hunger-0.18); state.energy=Math.max(0,state.energy-0.10);
+        let md=0.08; if(state.hunger<30)md+=0.18; if(state.energy<30)md+=0.12; if(state.dirty)md+=0.20;
         state.mood=Math.max(0,state.mood-md);
       }
       if(!state.dirty&&Math.random()<0.015) state.dirty=true;
@@ -682,8 +685,20 @@
     say(Q.nezzo);
   } else {
     const mins = Math.floor(state.age / 60);
-    toast('おかえり！ '+ mins +'分ぶりやで〜');
-    say(Q.kawaee);
+    // 離席中の変化をトーストで表示
+    if (state.hunger < 30) {
+      toast('おかえり！ おなかへってるで〜');
+      say(Q.nemui);
+    } else if (state.mood < 30) {
+      toast('おかえり！ さみしかったわ〜');
+      say(Q.fun);
+    } else if (state.dirty) {
+      toast('おかえり！ ちょっとくっさいで');
+      say(Q.kusse);
+    } else {
+      toast('おかえり！ '+ mins +'分ぶりやで〜');
+      say(Q.kawaee);
+    }
   }
   setInterval(tick,1000);
   // タブを閉じる・切り替える前に保存
