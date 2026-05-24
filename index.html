@@ -432,7 +432,51 @@
       feed:0, play:0, sleep:0, clean:0, neglect:0, neglectTotal:0, sleeping:false, dirty:false,
       kaidanSaid:0, suraimoSaid:0, unlocked:{egg:true} };
   }
-  state = fresh();
+  // ===== セーブ/ロード =====
+  const SAVE_KEY = 'sachiyocchi_v1';
+
+  function saveState() {
+    try {
+      const s = Object.assign({}, state, { savedAt: Date.now() });
+      localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+    } catch(e) {}
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return fresh();
+      const s = JSON.parse(raw);
+      // 離席時間の経過処理（最大24時間分まで）
+      if (s.savedAt && !s.sleeping) {
+        const elapsed = Math.floor((Date.now() - s.savedAt) / 1000);
+        const ticks = Math.min(elapsed, 86400); // 最大24時間
+        // 離席中の自然減少をまとめて適用
+        s.hunger  = Math.max(0, s.hunger  - ticks * 0.5);
+        s.energy  = Math.max(0, s.energy  - ticks * 0.3);
+        let moodDrop = ticks * 0.28;
+        if (s.hunger < 30) moodDrop += ticks * 0.5;
+        if (s.dirty)       moodDrop += ticks * 0.6;
+        s.mood    = Math.max(0, s.mood - moodDrop);
+        s.age    += ticks;
+        // 長時間放置でランダムに汚れる
+        if (!s.dirty && Math.random() < Math.min(0.95, ticks * 0.015)) s.dirty = true;
+      } else if (s.savedAt && s.sleeping) {
+        // 寝ている間はエネルギー回復・お腹は少し減る
+        const elapsed = Math.floor((Date.now() - s.savedAt) / 1000);
+        const ticks = Math.min(elapsed, 86400);
+        s.energy = Math.min(100, s.energy + ticks * 1.2);
+        s.hunger = Math.max(0, s.hunger  - ticks * 0.15);
+        s.age   += ticks;
+      }
+      // 必須フィールドの補完（バージョン差異対策）
+      const def = fresh();
+      Object.keys(def).forEach(k => { if (s[k] === undefined) s[k] = def[k]; });
+      return s;
+    } catch(e) { return fresh(); }
+  }
+
+  state = loadState();
 
   const $ = id=>document.getElementById(id);
   const char=$('char'), speech=$('speech'), toastEl=$('toast'), flash=$('flash'), zzz=$('zzz'), poop=$('poop');
@@ -522,17 +566,17 @@
   function feed(){ if($('btnFeed').disabled)return;
     if(state.id!=='baby'&&Math.random()<0.22){ say(Q.muri); hop(); return; }
     state.hunger=Math.min(100,state.hunger+26); state.feed++; state.care+=2;
-    if(Math.random()<0.35) state.dirty=true; hop(); say(Q.tabe); render(); }
+    if(Math.random()<0.35) state.dirty=true; hop(); say(Q.tabe); render(); saveState(); }
   function play(){ if($('btnPlay').disabled)return;
     state.mood=Math.min(100,state.mood+24); state.energy=Math.min(100,state.energy+10);
     state.hunger=Math.max(0,state.hunger-6); state.play++; state.care+=2;
-    wander(); say(Math.random()<0.45?Q.uo:rl()); render(); }
+    wander(); say(Math.random()<0.45?Q.uo:rl()); render(); saveState(); }
   function sleepToggle(){ if(state.id==='egg')return;
     state.sleeping=!state.sleeping;
     if(state.sleeping) say(Math.random()<0.5?Q.nezzo:Q.nemui);
     else { state.energy=Math.min(100,state.energy+28); say('ふぁ〜 よう寝た'); state.sleep++; state.care+=1; }
-    render(); }
-  function clean(){ if($('btnClean').disabled)return; say(Q.kusse); state.dirty=false; state.clean++; state.mood=Math.min(100,state.mood+8); state.care+=2; render(); }
+    render(); saveState(); }
+  function clean(){ if($('btnClean').disabled)return; say(Q.kusse); state.dirty=false; state.clean++; state.mood=Math.min(100,state.mood+8); state.care+=2; render(); saveState(); }
   function pet(){ state.pet++;
     if(state.id==='egg'){ hop(); if(state.pet>=5) tryEvolve(true); else say(['コトッ','ぴくっ',Q.nezzo,Q.nemui][state.pet%4]); render(); return; }
     state.mood=Math.min(100,state.mood+5);
@@ -603,6 +647,8 @@
     }
     tryEvolve(false);
     render();
+    // 10秒ごとにlocalStorageに保存
+    if (state.age % 10 === 0) saveState();
   }
 
   $('tTamago').onclick=()=>{ applyTheme('tamago'); document.querySelectorAll('.cbtn').forEach(b=>b.classList.remove('active')); $('tTamago').classList.add('active'); };
@@ -625,11 +671,24 @@
     state=fresh(); state.unlocked=keep; state.unlocked.egg=true;
     if(resetCount>=3 && !state.unlocked.robo){ /* 3回リセットでロボ解禁の伏線 */ }
     if(resetCount>=3){ state.unlocked.robo=true; toast('🤖 何度もやり直す者の前に…ロボさちよ解禁！',true); }
+    saveState();
     say(Q.nezzo); render();
   };
 
-  render(); toast('🥚 たまごを5回なでて かえそう！'); say(Q.nezzo);
+  render();
+  // はじめてかどうかでメッセージを変える
+  if (state.age === 0) {
+    toast('🥚 たまごを5回なでて かえそう！');
+    say(Q.nezzo);
+  } else {
+    const mins = Math.floor(state.age / 60);
+    toast('おかえり！ '+ mins +'分ぶりやで〜');
+    say(Q.kawaee);
+  }
   setInterval(tick,1000);
+  // タブを閉じる・切り替える前に保存
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) saveState(); });
+  window.addEventListener('beforeunload', ()=>saveState());
 })();
 </script>
 </body>
